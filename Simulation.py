@@ -10,7 +10,7 @@ import numpy as np
 from simulationMath import *
 from simulationObjects import *
 from Gradient import Gradient
-from scipy.spatial import *
+from scipy import spatial
 import pickle
 
 #create the time series class
@@ -339,7 +339,7 @@ class Simulation(object):
             #remove/add any objects
             self.update_object_queue()
             #perform physcis
-            self.collide()
+            self.collide_ckdtree() #self.collide()
             #now optimize the resultant constraints
             self.optimize()
             #increment the time
@@ -401,7 +401,7 @@ class Simulation(object):
             #Now we can add these points to the list
             points[i] = self.objects[i].location
         #now perform the nearest neghbor assessmentusing a KDTree
-        tree = KDTree(points)
+        tree = spatial.KDTree(points)
         #keep track of this as a network
         self.network = nx.Graph()
         #add all the simobjects
@@ -416,6 +416,42 @@ class Simulation(object):
                 obj2 = self.objects[ind]
                 #now add these to the edges
                 self.network.add_edge(obj1, obj2)
+        
+        
+    def collide_ckdtree(self):
+        """ 
+        Function: Find the neighboring nodes using KD-trees. 
+        Input: Simulation Object(self)
+        Note. This method uses queries the entire tree and performs a set difference.
+        TODO: Profile the speed changes using this method.
+        """
+        #Networks has new nodes from update_object_queue
+        agents = self.objects
+        [self.network.adj[u].clear() for u in agents] # fast way to delete edges w/o adding nodes again
+        
+        agent_locations = np.array([a.location for a in agents]) 
+        assert agent_locations.shape == (len(agents), 3)
+        
+        #create KD tree. All object nodes are in network
+        tree = spatial.cKDTree(agent_locations)
+        
+        #Perform kdtree distance search to find all edges.
+        max_distance = 13  #6.5*2
+        new_edges_indices = tree.query_ball_tree(tree,r=max_distance,p=2)
+        
+        #Remove self edges by performing query on indices with distance of 0.
+        min_distance = 0.0
+        self_edges_indices = tree.query_ball_tree(tree,r=min_distance,p=2)
+        
+        #Perform set difference instead of looping and finding eucl distance > 0
+        all_neighbor_indices = \
+                [np.setdiff1d(n, s) for n, s in
+                                it.izip(new_edges_indices, self_edges_indices)]
+        #create tuples/edges and add to network. nodes auto-added if new edge member present.
+        self.network.add_edges_from(
+            [(a, agents[nb]) for a, nbs in it.izip(agents, all_neighbor_indices)
+                         for nb in nbs])
+
 
     def optimize(self):                
         #apply constraints from each object and update the positions
