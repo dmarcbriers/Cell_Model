@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 from scipy import ndimage
 from scipy.interpolate import griddata
@@ -82,7 +84,8 @@ class Gradient(object):
 ##        np.save(path, self.C)
 ##        return path + ".npy"
         #delete the list
-        path = base_path + self.name + "_" + time_stamp
+        filename = self.name + "_" + time_stamp
+        path = os.path.join(base_path,filename)
         f = open(path, "w")
         pickle.dump(self, f)
         f.close()

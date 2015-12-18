@@ -1,12 +1,19 @@
-from Simulation import *
+from __future__ import division
 import sys
-from scipy.spatial.distance import euclidean
+import os
 import random as r
-from StemCellSoluble import *
-from Gradient import Gradient
+import time
+import argparse
+
+from scipy.spatial.distance import euclidean
 import networkx as nx
-import simAnaylsisScriptOct4Nanog as sa
+
+from StemCellSoluble import *
+from Simulation import *
+from Gradient import Gradient
+#import simAnaylsisScriptOct4Nanog as sa
 import platform
+import simulationUtils as su
 
 #runs from the command line and takes arguments in the follwing format
 #-0
@@ -18,33 +25,57 @@ import platform
 #-6 time step
 
 if(__name__ == '__main__'):
-    args = sys.argv
-    #if these arguments are not set throw an error
-    if(len(args) < 6):
-        raise TypeError('6 arguments required')
-    #else set them correctly
-    struct_path = str(args[1])
-    sim_base_path = str(args[2])
-    sim_id = int(args[3])
-    ts = float(args[4])
-    te = float(args[5])
-    dt = float(args[6])
-    p1 = float(args[7])
-    p2 = float(args[8])
-    p3 = float(args[9])
+    
+    ###############################
+    ### Command Line Arguments ####
+    ###############################
 
-##    ts = 0
-##    te = 100
-##    dt = 1
-##    sim_id = 9
-##    sim_base_path = "C:\\users\\doug\\desktop\\"
-##    struct_path = sim_base_path + "struct 100\\"
-##    struct_path = sim_base_path + "structs\\EB\\1000\\25\\"
-##    p1 = .001
-##    p2 = .06
-##    p3 = 10
-##    p4 = .1
-##    p5 = 1000.
+    #Use argparse Module to handle command line arguments and gi
+    parser = argparse.ArgumentParser(description=\
+    "This is an agent-based model that can explore spatial differentiaion patterns\n" + \
+    "in aggregates of stem cells known as Embroid Bodies. See White et al Integrative Biol (2015).")
+    
+    #Set command line arguments
+    parser.add_argument("sim_id",
+                        help="There are several starting simulation structures numbered 0-99 to " +\
+                             "capture biological variability. Choose any structure numbered 0-99.",
+                        type=str)
+    parser.add_argument('a',help='basal differentiaion probability. Range: .01,.005,.002',type=float)
+    parser.add_argument('k1',help='tuning paramter for negative feedforward rule. Range: [0,1]',type=float)
+    parser.add_argument('n1',help='Hill coefficient for negative feedforward rule. Range: 10,25,50. Max ~300',type=float)
+    parser.add_argument('k2',help='Tuning parameter for positive feedback rule. Range: [0,1]',type=float)
+    parser.add_argument('n2',help='Hill coefficient for positive feedback rule. Range: 10,25,50. Max ~300',type=float)
+    parser.add_argument('time_end',help='Maximum number of time steps the model will run.(Default=200)',
+                        nargs='?',type=int,default=200)
+
+    args = parser.parse_args()
+
+
+    #struct_path = str(args[1])
+    #sim_base_path = str(args[2])
+    #sim_id = int(args[3])
+    #ts = float(args[4])
+    #te = float(args[5])
+    #dt = float(args[6])
+    #p1 = float(args[7])
+    #p2 = float(args[8])
+    #p3 = float(args[9])
+
+    #Keep track of runtime
+    start_time = time.time()
+
+    ts = 0
+    te = 100
+    dt = 1
+    sim_id = args.sim_id #'9'
+    #sim_base_path = '/home/dbriers/hyness/EBICS/Cell_Model' #"C:\\users\\doug\\desktop\\"
+    #struct_path = os.path.join(sim_base_path,"1000",str(sim_id))
+    #struct_path = sim_base_path + "structs\\EB\\1000\\25\\"
+    #p1 = args.a  #.001
+    #p2 = args.k1 #.06
+    #p3 = args.n1 #10
+    #p4 = args.k2 #.1
+    #p5 = args.n2 #100 #p5 > 340 needs type bigFloat,Decimal. #1000.
 ####    p1 = .001
 ##    p1 = 0.000
 ####    p2 = .007
@@ -53,6 +84,21 @@ if(__name__ == '__main__'):
 ##    p3 = 10
 ##    p4 = 5E-4
 ##    p5 = 10.0
+    
+    #OUTPUT Folder as relative directory.
+    list_of_params = ["results",str(args.a),str(args.k1),str(args.n1),str(args.k2),str(args.n2)]
+    sim_base_path = '_'.join(list_of_params)
+    struct_path =  os.path.join("1000", sim_id) ##TODO: Take from argparse.
+    
+    # Output folder and LOG file.
+    su.make_sure_path_exists(os.path.join(sim_base_path,sim_id))
+    log_file = open( os.path.join(sim_base_path,sim_id,'simulation.log') ,"w")
+    sys.stdout = log_file
+ 
+
+    #################################
+    ### Simulation Configurations ###
+    #################################
 
     #Now make a new simulation
     sim = Simulation(sim_id,
@@ -92,7 +138,7 @@ if(__name__ == '__main__'):
 ##        print(struct_path + f[0])
     #then load this file
     #open the input structure file
-    net = nx.read_gpickle(struct_path + f[0])
+    net = nx.read_gpickle(os.path.join(struct_path,f[0]))
     cent = (0,0,0)
     placed = False
     nodes = net.nodes()
@@ -106,7 +152,7 @@ if(__name__ == '__main__'):
         #now make a new stem cell
         sim_obj = StemCell(node.location, node.radius, node.ID,
                            "U", division_set = div_set,
-                           params = [p1, p2, p3, p4, p5])
+                           params = [args.a, args.k1, args.n1, args.k2, args.n2])
 
  
         #add some gradient values
@@ -130,17 +176,20 @@ if(__name__ == '__main__'):
         s2 = id_map[n2.ID]
         sim.network.add_edge(s1, s2)
     #Run the simulation
-
     sim.run()
-    #set the seperator
-    if(platform.system() == "Windows"):
-        #windows
-        sep = "\\"
-    else:
-        #linux/unix
-        sep = "/"   
+
+
+    ################################
     
-    #analyze the data
-    print(sim_base_path)
-    sa.get_simulation_metric_data(sim_base_path + sep + repr(sim_id) + sep)
+    #Print runtime of the simulation.
+    print 'Model took', (time.time()-start_time)/60, 'minutes.'
+    log_file.close()
+
+    
+    #########################
+    ### analyze the data ####
+    #########################
+
+    #print(sim_base_path)
+    #sa.get_simulation_metric_data(sim_base_path + os.sep + repr(sim_id) + os.sep)
 

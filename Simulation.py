@@ -3,15 +3,20 @@
 # Author: Douglas E. White
 # Date:   10/16/2013
 ################################################################################
+from __future__ import division
 import os, sys
 import platform
+import itertools as it
+import time
+
 import networkx as nx
 import numpy as np
+from scipy import spatial
+import pickle
+
 from simulationMath import *
 from simulationObjects import *
 from Gradient import Gradient
-from scipy import spatial
-import pickle
 
 #create the time series class
 class TimeSeries(object):
@@ -329,23 +334,42 @@ class Simulation(object):
         #set up the gradients
         self._set_gradient_inital_conditions()
         #also get the number of nodes
+        
         #now run the loop
         while(self.time <= self.end_time and len(self.objects) < 60000):
             print("Time: " + repr(self.time))
             print("Number of objects: " + repr(len(self.objects)))
             
             #Update the objects and gradients
-            self.update()
+            total_cells = len(self.objects)
+            t0 = time.time()
+            percent_diff = self.update(total_cells) #new convergence param(tot_cells)
+            print('Duration rules update: ' + str((time.time() - t0)))
+
             #remove/add any objects
             self.update_object_queue()
+
             #perform physcis
-            self.collide_ckdtree() #self.collide()
+            t0 = time.time()
+            #self.collide()
+            self.collide_ckdtree()
+            print('Duration collide: ' + str((time.time() - t0)))
+
             #now optimize the resultant constraints
+            t0 = time.time()
             self.optimize()
-            #increment the time
-            self.time += self.time_step
-            #save 
+            print('Duration optimize: ' + str((time.time() - t0)))
+
+            #Save timepoint
+            t0 = time.time()
+            #self.save_image() #we can just save the image and not have data footprint.
             self.save()
+            print('Duration save: ' + str((time.time() - t0)))
+
+            #Increment time and report stats for the next iteration.
+            print("Percent cells differentiated: %.3f") % (percent_diff)
+            self.time += self.time_step  #increment time
+
         #once the sim is done close the header file
         self._header.flush()
         self._header.close()
@@ -364,7 +388,7 @@ class Simulation(object):
         self._objects_to_add= []
         
 
-    def update(self):
+    def update(self,total_cells):
         """ Updates all of the objects in the simulation
         """
         #define the sinks and sources
@@ -384,13 +408,20 @@ class Simulation(object):
         
         #update the sim objects 
         print("Updating objects...")
+        
+        ### RUN A FASTER UPDATE LOOP ###
+        #Store percent of diff nodes
+        num_diff_cells = 0
+
         #RUN A FASTER UPDATE LOOP
         split = 1
         for j in range(0, split):
             dt = self.time_step / float(split)
-            for i in range(0, len(self.objects)):
-                self.objects[i].update(self, dt)
-                
+            num_diff_cells = np.sum([o.update(self, dt) for o in self.objects])
+
+        return num_diff_cells/total_cells
+
+
     def collide(self):
         """ Handles the collision map generation 
         """
@@ -668,13 +699,18 @@ class Simulation(object):
         """
         #Write the current itme into the header file
         self._header.write(repr(self.time))
+        
         #get the base path
-        base_path = self.path + self.name + self._sep
+        base_path = os.path.join(self.path,self.name)
+        
         #First save the network files
-        n_path = base_path + "network" + repr(self.time) + ".gpickle"
+        filename = "network" + repr(self.time) + ".gpickle"
+        n_path = os.path.join(base_path,filename)
         nx.write_gpickle(self.network, n_path)
+        
         #now write that path to the file
         self._header.write("," + n_path)
+        
         #Then save the gradient files
         for i in range(0, len(self.gradients)):
             grad_path = self.gradients[i].save(base_path, repr(self.time))
@@ -683,4 +719,3 @@ class Simulation(object):
         self._header.write("\n")
         #fluish the file
         self._header.flush()
-
